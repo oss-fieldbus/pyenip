@@ -363,35 +363,6 @@ class EthernetIP(object):
         self.explicit.append(exp)
         return exp
 
-    def main(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((self.ip, ENIP_TCP_PORT))
-        # send list services request
-        listServPack = EncapsulationPacket(command=0x0004)
-        s.send(listServPack.pack())
-        data = s.recv(1024)
-        s.close()
-
-        print("recv data:", data)
-        listServPack.unpack(data)
-        print("command: ", listServPack.command)
-        print("length:  ", listServPack.length)
-        print("session: ", listServPack.session)
-        print("status:  ", listServPack.status)
-        if listServPack.status == EncapsulationPacket.ENCAP_STATUS_SUCCESS:
-            print("STATUS: SUCCESS")
-            if listServPack.command == EncapsulationPacket.ENCAP_CMD_NOP:
-                print("NOP received")
-            elif listServPack.command == EncapsulationPacket.ENCAP_CMD_LISTSERVICES:
-                print("ListServices-Data:", listServPack.data)
-                csd = CommandSpecificData(listServPack.data)
-                print("CSD: item_count: ", csd.item_count)
-                print("CSD: type_id:    ", csd.type_id)
-                print("CSD: length:     ", csd.length)
-                lsr = ListServicesReply(csd.data)
-                print("LSR: version: ", lsr.version)
-                print("LSR: name:    ", lsr.name_of_service.decode())
-
 class EthernetIPSocket(object):
     def __init__(self, ip):
         self.ipaddr = ip
@@ -412,6 +383,31 @@ class EthernetIPSocket(object):
         if attr != None:
             data += b"\x30" + struct.pack("B", attr)
         return data
+
+    def scanNetwork(self, timeout):
+        import time
+        listOfNodes = []
+        udpsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        udpsock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        context = random.randint(1, 4026531839)
+        pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_LISTIDENTITY,
+                                               context=bytes(context))
+        udpsock.sendto(pkt.pack(),("255.255.255.255", ENIP_TCP_PORT))
+        tStart = time.time()
+        while time.time() < (tStart+timeout):
+            timeout = tStart + timeout - time.time()
+            inp, out, err = select.select([udpsock], [], [], timeout)
+            if len(inp) != 0:
+                data = udpsock.recv(1024)
+                pkt = EncapsulationPacket()
+                pkt.unpack(data)
+                if pkt.status == EncapsulationPacket.ENCAP_STATUS_SUCCESS and pkt.command == EncapsulationPacket.ENCAP_CMD_LISTIDENTITY:
+                    csd = CommandSpecificData(pkt.data)
+                    if csd.type_id == CommandSpecificData.TYPE_ID_LIST_IDENT_RESPONSE:
+                        lid = ListIdentifyReply(csd.data)
+                        listOfNodes.append(lid)
+        return listOfNodes
 
     def listID(self):
         context = random.randint(1, 4026531839)
@@ -716,7 +712,15 @@ class EthernetIPExpConnection(EthernetIPSession):
 def testENIP():
     EIP = EthernetIP("192.168.1.20")
     C1 = EIP.explicit_conn("192.168.1.20")
-    
+
+    listOfNodes = C1.scanNetwork(5)
+    print("Found ", len(listOfNodes), " nodes")
+    for node in listOfNodes:
+        name = node.product_name.decode()
+        sockinfo = SocketAddressInfo(node.socket_addr)
+        ip = socket.inet_ntoa(struct.pack("!I",sockinfo.sin_addr))
+        print(ip, " - ", name)
+
     pkt = C1.listID()
     if pkt != None:
         print("Product name: ", pkt.product_name.decode())
