@@ -523,6 +523,17 @@ class EthernetIPSession(EthernetIPSocket):
         return self.unconnSend(CI_SRV_GET_ATTR_SINGLE, path, \
                                random.randint(1,4026531839), chk, chkdata)
 
+    def setAttrSingle(self, clas, inst, attr, data):
+        if str == type(data): 
+            # string values need a special attention (add length before and a padding byte behind)
+            data_len = len(data)
+            data = struct.pack("BB", data_len, 0) + data.encode()
+            if data_len&1:
+                data += b"\x00"
+        path = self.mkReqPath(clas, inst, attr)
+        return self.unconnSend(CI_SRV_SET_ATTR_SINGLE, path+data, \
+                        random.randint(1,4026531839), 0, "")
+
 class EthernetIPExpConnection(EthernetIPSession):
     def __init__(self, ipaddr):
         EthernetIPSession.__init__(self, ipaddr)
@@ -735,6 +746,7 @@ def testENIP():
 
     C1.registerSession()
 
+    C1.setAttrSingle(CIP_OBJ_TCPIP, 1, 6, "fbxxx")
 
     for i in range(1,8):
         r = C1.getAttrSingle(CIP_OBJ_IDENTITY, 1, i)
