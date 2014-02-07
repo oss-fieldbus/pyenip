@@ -384,16 +384,16 @@ class EthernetIPSocket(object):
             data += b"\x30" + struct.pack("B", attr)
         return data
 
-    def scanNetwork(self, timeout):
+    def scanNetwork(self, broadcastAddress="255.255.255.0", timeout=10):
         import time
         listOfNodes = []
         udpsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        #udpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         udpsock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         context = random.randint(1, 4026531839)
         pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_LISTIDENTITY,
-                                               context=bytes(context))
-        udpsock.sendto(pkt.pack(),("255.255.255.255", ENIP_TCP_PORT))
+                                  sender_context=context.to_bytes(8, byteorder='big'))
+        udpsock.sendto(pkt.pack(),(broadcastAddress, ENIP_TCP_PORT))
         tStart = time.time()
         while time.time() < (tStart+timeout):
             timeout = tStart + timeout - time.time()
@@ -412,7 +412,7 @@ class EthernetIPSocket(object):
     def listID(self):
         context = random.randint(1, 4026531839)
         pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_LISTIDENTITY,
-                                               context=bytes(context))
+                                               sender_context=context.to_bytes(8, byteorder='big'))
         self.sock.send(pkt.pack())
         inp, out, err = select.select([self.sock], [], [], 10)
         if len(inp) != 0:
@@ -429,7 +429,7 @@ class EthernetIPSocket(object):
     def listServices(self):
         context = random.randint(1,4026531839)
         pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_LISTSERVICES,
-                                  context=bytes(context))
+                                  sender_context=context.to_bytes(8, byteorder='big'))
         self.sock.send(pkt.pack())
         inp, out, err = select.select([self.sock], [], [], 10)
         if len(inp) != 0:
@@ -455,7 +455,7 @@ class EthernetIPSession(EthernetIPSocket):
         context = random.randint(1,4026531839)
         csd = RegisterSessionPacket(protocol_version=1, option_flag=0)
         pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_REGISTERSESSION,\
-                                  length=len(csd), context=bytes(context), data=csd)
+                                  length=len(csd), sender_context=context.to_bytes(8, byteorder='big'), data=csd)
         self.sock.send(pkt.pack())
         inp, out, err = select.select([self.sock], [], [], 10)
         if len(inp) != 0:
@@ -469,7 +469,7 @@ class EthernetIPSession(EthernetIPSocket):
 
     def sendEncap(self, command, data):
         context = random.randint(1,4026531839)
-        pkt = EncapsulationPacket(command=command, length=len(data), context=context, data=data)
+        pkt = EncapsulationPacket(command=command, length=len(data), sender_context=context.to_bytes(8, byteorder='big'), data=data)
         return self.sock.send(pkt.pack())
     
     def unconnSend(self, service, data, context=0, chk=0, chkdata="\x00"):
@@ -484,7 +484,7 @@ class EthernetIPSession(EthernetIPSocket):
                                   item_count=2, length=0, data=cpf2)
         srr = SendRRPacket(interface_handle=0, timeout=10, data=cpf); 
         pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_SENDRRDATA, \
-                                  length=len(srr),session=self.session, context=context, data=srr)
+                                  length=len(srr),session=self.session, sender_context=context.to_bytes(8, byteorder='big'), data=srr)
         self.sock.send(pkt.pack())
         inp, out, err = select.select([self.sock], [], [], 10)
         if len(inp) != 0:
@@ -515,7 +515,7 @@ class EthernetIPSession(EthernetIPSocket):
         cpf = CommandSpecificData(type_id=CommandSpecificData.TYPE_ID_NULL, length=0, data=cpf2)
         srr = SendRRPacket(interface_handle=0, timeout=10, data=cpf); 
         pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_SENDRRDATA, \
-                                  length=len(srr),session=self.session, context=context, data=srr)
+                                  length=len(srr),session=self.session, sender_context=context.to_bytes(8, 'big'), data=srr)
         return pkt
 
     def getAttrSingle(self, clas, inst, attr, chk=0, chkdata="\x00"):
@@ -610,7 +610,7 @@ class EthernetIPExpConnection(EthernetIPSession):
         srr = SendRRPacket(interface_handle=0, timeout=0, data=cpf); 
         pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_SENDRRDATA, \
                                   length=len(srr),session=self.session, \
-                                  context=random.randint(1,4026531839), \
+                                  sender_context=random.randint(1,4026531839).to_bytes(8, byteorder='big'), \
                                   data=srr
                                  )
         self.sock.send(pkt.pack())
@@ -662,7 +662,7 @@ class EthernetIPExpConnection(EthernetIPSession):
         srr = SendRRPacket(interface_handle=0, timeout=0, data=cpf); 
         pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_SENDRRDATA, \
                                   length=len(srr),session=self.session, \
-                                  context=random.randint(1,4026531839), \
+                                  sender_context=random.randint(1,4026531839).to_bytes(8, byteorder='big'), \
                                   data=srr
                                  )
         self.sock.send(pkt.pack())
@@ -721,10 +721,14 @@ class EthernetIPExpConnection(EthernetIPSession):
             self.prod_state = 0
         
 def testENIP():
-    EIP = EthernetIP("192.168.1.20")
-    C1 = EIP.explicit_conn("192.168.1.20")
+    hostname = "192.168.3.45"
+    broadcast = "192.168.255.255"
+    inputsize = 1
+    outputsize = 1
+    EIP = EthernetIP(hostname)
+    C1 = EIP.explicit_conn(hostname)
 
-    listOfNodes = C1.scanNetwork(5)
+    listOfNodes = C1.scanNetwork(broadcast,5)
     print("Found ", len(listOfNodes), " nodes")
     for node in listOfNodes:
         name = node.product_name.decode()
@@ -740,8 +744,8 @@ def testENIP():
     print("ListServices:", str(pkt))
 
     # configure 6 bytes i/o
-    EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_INPUT,  6, 101, C1)
-    EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_OUTPUT, 6, 100, C1)
+    EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_INPUT,  inputsize, 101, C1)
+    EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_OUTPUT, outputsize, 100, C1)
     EIP.startIO()
 
     C1.registerSession()
