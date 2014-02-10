@@ -268,7 +268,7 @@ class UdpSendDataPacket(dpkt.Packet):
                ('conn_id', 'I', 0),
                ('seq_num', 'I', 0),
                ('type_id_conn_data', 'H', 0x00b1),
-               ('length', 'H', 12),
+               ('len_conn_data', 'H', 12),
                ('seq_count', 'H', 0))
 
 class UdpRecvDataPacket(dpkt.Packet):
@@ -698,9 +698,9 @@ class EthernetIPExpConnection(EthernetIPSession):
 
         pkt = UdpSendDataPacket(seq_num=self.seqnum, seq_count=self.seqnum, \
                             conn_id=self.otconnid, \
-                            lenght=(len(self.outAssem)/8)+6, \
+                            len_conn_data=int((len(self.outAssem)/8)+6), \
                             data=output \
-                           )
+                          )
         self.seqnum += 1
         self.prodsock.sendto(pkt.pack(), (self.ipaddr,ENIP_UDP_PORT))
 
@@ -721,13 +721,14 @@ class EthernetIPExpConnection(EthernetIPSession):
             self.prod_state = 0
         
 def testENIP():
-    hostname = "192.168.3.45"
+    hostname = "192.168.1.45"
     broadcast = "192.168.255.255"
     inputsize = 1
     outputsize = 1
     EIP = EthernetIP(hostname)
     C1 = EIP.explicit_conn(hostname)
 
+    """
     listOfNodes = C1.scanNetwork(broadcast,5)
     print("Found ", len(listOfNodes), " nodes")
     for node in listOfNodes:
@@ -735,7 +736,7 @@ def testENIP():
         sockinfo = SocketAddressInfo(node.socket_addr)
         ip = socket.inet_ntoa(struct.pack("!I",sockinfo.sin_addr))
         print(ip, " - ", name)
-
+    """
     pkt = C1.listID()
     if pkt != None:
         print("Product name: ", pkt.product_name.decode())
