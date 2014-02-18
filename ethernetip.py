@@ -22,7 +22,7 @@ import struct
 import threading
 import time
 
-import dpkt.dpkt as dpkt
+import python_ethernetip.dpkt.dpkt as dpkt
 
 ENIP_TCP_PORT   = 44818
 ENIP_UDP_PORT   = 2222
@@ -721,14 +721,14 @@ class EthernetIPExpConnection(EthernetIPSession):
             self.prod_state = 0
         
 def testENIP():
-    hostname = "192.168.1.45"
+    hostname = "192.168.3.45"
     broadcast = "192.168.255.255"
     inputsize = 1
     outputsize = 1
     EIP = EthernetIP(hostname)
     C1 = EIP.explicit_conn(hostname)
 
-    """
+    
     listOfNodes = C1.scanNetwork(broadcast,5)
     print("Found ", len(listOfNodes), " nodes")
     for node in listOfNodes:
@@ -736,7 +736,7 @@ def testENIP():
         sockinfo = SocketAddressInfo(node.socket_addr)
         ip = socket.inet_ntoa(struct.pack("!I",sockinfo.sin_addr))
         print(ip, " - ", name)
-    """
+    
     pkt = C1.listID()
     if pkt != None:
         print("Product name: ", pkt.product_name.decode())
@@ -744,7 +744,20 @@ def testENIP():
     pkt = C1.listServices()
     print("ListServices:", str(pkt))
 
-    # configure 6 bytes i/o
+    # read input size from global system object (obj 0x84, attr 4)
+    r = C1.getAttrSingle(0x84, 1, 4)
+    if 0 == r[0]:
+        print("Read CPX input size from terminal success (data: "+ str(r[1]) + ")")
+        inputsize = struct.unpack("B", r[1])[0]
+
+    # read output size from global system object (obj 0x84, attr 5)
+    r = C1.getAttrSingle(0x84, 1, 5)
+    if 0 == r[0]:
+        print("Read CPX output size from terminal sucess (data: " + str(r[1]) + ")")
+        outputsize = struct.unpack("B", r[1])[0]
+
+    # configure i/o
+    print("Configure with {0} bytes input and {1} bytes output".format(inputsize, outputsize))
     EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_INPUT,  inputsize, 101, C1)
     EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_OUTPUT, outputsize, 100, C1)
     EIP.startIO()
@@ -774,4 +787,4 @@ def testENIP():
     C1.sendFwdCloseReq(101,100,1)
     EIP.stopIO()
 
-testENIP()
+# testENIP()
