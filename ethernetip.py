@@ -22,7 +22,7 @@ import struct
 import threading
 import time
 
-import python_ethernetip.dpkt.dpkt as dpkt
+import dpkt.dpkt as dpkt
 
 ENIP_TCP_PORT   = 44818
 ENIP_UDP_PORT   = 2222
@@ -30,12 +30,26 @@ ENIP_UDP_PORT   = 2222
 #/* Common Services */
 CI_SRV_GET_ALL         = 0x01
 CI_SRV_SET_ATTR_ALL    = 0x02
+CI_SRV_GET_ATTR_LIST   = 0x03
+CI_SRV_SET_ATTR_LIST   = 0x04
 CI_SRV_RESET           = 0x05
+CI_SRV_START           = 0x06
+CI_SRV_STOP            = 0x07
 CI_SRV_CREATE          = 0x08
 CI_SRV_DELETE          = 0x09
+CI_SRV_MULTIPLE_SRV    = 0x0A
+CI_SRV_APPLY_ATTR      = 0x0D
 CI_SRV_GET_ATTR_SINGLE = 0x0E
 CI_SRV_SET_ATTR_SINGLE = 0x10
+CI_SRV_FIND_NEXT_OBJ   = 0x11
 CI_SRV_RESTORE         = 0x15
+CI_SRV_SAVE            = 0x16
+CI_SRV_NOP             = 0x17
+CI_SRV_GET_MEMBER      = 0x18
+CI_SRV_SET_MEMBER      = 0x19
+CI_SRV_INSERT_MEMBER   = 0x1A
+CI_SRV_REMOVE_MEMBER   = 0x1B
+CI_SRV_GROUP_SYNC      = 0x1C
 CI_SRV_FORWARD_CLOSE   = 0x4E
 CI_SRV_UNCONN_SEND     = 0x52
 CI_SRV_FORWARD_OPEN    = 0x54
@@ -59,6 +73,50 @@ CIP_OBJ_CONN_CONF      = 0xF3
 CIP_OBJ_PORT           = 0xF4
 CIP_OBJ_TCPIP          = 0xF5
 CIP_OBJ_ETHERNET_LINK  = 0xF6
+
+#/* The following are CIP (Ethernet/IP) Generic error codes */
+CIP_ROUTER_ERROR_SUCCESS                   = 0x00  # We done good...
+CIP_ROUTER_ERROR_FAILURE                   = 0x01  # Connection failure
+CIP_ROUTER_ERROR_NO_RESOURCE               = 0x02  # Resource(s) unavailable
+CIP_ROUTER_ERROR_INVALID_PARAMETER_VALUE   = 0x03  # Obj specific data bad
+CIP_ROUTER_ERROR_INVALID_SEG_TYPE          = 0x04  # Invalid segment type in path
+CIP_ROUTER_ERROR_INVALID_DESTINATION       = 0x05  # Invalid segment value in path
+CIP_ROUTER_ERROR_PARTIAL_DATA              = 0x06  # Not all expected data sent
+CIP_ROUTER_ERROR_CONN_LOST                 = 0x07  # Messaging connection lost
+CIP_ROUTER_ERROR_BAD_SERVICE               = 0x08  # Unimplemented service code
+CIP_ROUTER_ERROR_BAD_ATTR_DATA             = 0x09  # Bad attribute data value
+CIP_ROUTER_ERROR_ATTR_LIST_ERROR           = 0x0A  # Get/set attr list failed
+CIP_ROUTER_ERROR_ALREADY_IN_REQUESTED_MODE = 0x0B  # Obj already in requested mode
+CIP_ROUTER_ERROR_OBJECT_STATE_CONFLICT     = 0x0C  # Obj not in proper mode
+CIP_ROUTER_ERROR_OBJ_ALREADY_EXISTS        = 0x0D  # Object already created
+CIP_ROUTER_ERROR_ATTR_NOT_SETTABLE         = 0x0E  # Set of get only attr tried
+CIP_ROUTER_ERROR_PERMISSION_DENIED         = 0x0F  # Insufficient access permission
+CIP_ROUTER_ERROR_DEV_IN_WRONG_STATE        = 0x10  # Device not in proper mode
+CIP_ROUTER_ERROR_REPLY_DATA_TOO_LARGE      = 0x11  # Response packet too large
+CIP_ROUTER_ERROR_FRAGMENT_PRIMITIVE        = 0x12  # Primitive value will fragment
+CIP_ROUTER_ERROR_NOT_ENOUGH_DATA           = 0x13  # Goldilocks complaint #1
+CIP_ROUTER_ERROR_ATTR_NOT_SUPPORTED        = 0x14  # Attribute is undefined
+CIP_ROUTER_ERROR_TOO_MUCH_DATA             = 0x15  # Goldilocks complaint #2
+CIP_ROUTER_ERROR_OBJ_DOES_NOT_EXIST        = 0x16  # Non-existant object specified
+CIP_ROUTER_ERROR_NO_FRAGMENTATION          = 0x17  # Fragmentation not active
+CIP_ROUTER_ERROR_DATA_NOT_SAVED            = 0x18  # Attr data not previously saved
+CIP_ROUTER_ERROR_DATA_WRITE_FAILURE        = 0x19  # Attr data not saved this time
+CIP_ROUTER_ERROR_REQUEST_TOO_LARGE         = 0x1A  # Routing failure on request
+CIP_ROUTER_ERROR_RESPONSE_TOO_LARGE        = 0x1B  # Routing failure on response
+CIP_ROUTER_ERROR_MISSING_LIST_DATA         = 0x1C  # Attr data not found in list
+CIP_ROUTER_ERROR_INVALID_LIST_STATUS       = 0x1D  # Returned list of attr w/status
+CIP_ROUTER_ERROR_SERVICE_ERROR             = 0x1E  # Embedded service failed
+CIP_ROUTER_ERROR_VENDOR_SPECIFIC           = 0x1F  # Vendor specific error
+CIP_ROUTER_ERROR_INVALID_PARAMETER         = 0x20  # Invalid parameter
+CIP_ROUTER_ERROR_WRITE_ONCE_FAILURE        = 0x21  # Write once previously done
+CIP_ROUTER_ERROR_INVALID_REPLY             = 0x22  # Invalid reply received
+CIP_ROUTER_ERROR_BAD_KEY_IN_PATH           = 0x25  # Electronic key in path failed
+CIP_ROUTER_ERROR_BAD_PATH_SIZE             = 0x26  # Invalid path size
+CIP_ROUTER_ERROR_UNEXPECTED_ATTR           = 0x27  # Cannot set attr at this time
+CIP_ROUTER_ERROR_INVALID_MEMBER            = 0x28  # Member ID in list nonexistant
+CIP_ROUTER_ERROR_MEMBER_NOT_SETTABLE       = 0x29  # Cannot set value of member
+CIP_ROUTER_ERROR_UNKNOWN_MODBUS_ERROR      = 0x2B  # Unhandled Modbus Error
+CIP_ROUTER_ERROR_STILL_PROCESSING          = 0xFF  # Special marker to indicate we haven't finished processing the request yet
 
 class EncapsulationPacket(dpkt.Packet):
     # commands
@@ -339,7 +397,15 @@ class EthernetIP(object):
         while 1 == self.io_state:
             inp, out, err = select.select([self.udpsock], [], [], 2)
             if len(inp) != 0:
-                buf, addr = self.udpsock.recvfrom(1024)
+                try:
+                    buf, addr = self.udpsock.recvfrom(1024)
+                except OSError:
+                    # If we close the socket asynchronously, the recv will
+                    # fail
+                    if self.io_state == 0:
+                        return
+                    raise
+
                 addr = addr[0]
                 pkt = UdpRecvDataPacket(buf)
 
@@ -363,6 +429,27 @@ class EthernetIP(object):
         self.explicit.append(exp)
         return exp
 
+    def listIDUDP(self, ipaddr=None, timeout=5):
+        udpsock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        context = random.randint(1, 4026531839)
+        pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_LISTIDENTITY,
+                                  sender_context=context.to_bytes(8, byteorder='big'))
+        if ipaddr is None:
+            ipaddr = self.ip
+        udpsock.sendto(pkt.pack(),(ipaddr, ENIP_TCP_PORT))
+        inp, out, err = select.select([udpsock], [], [], timeout)
+        if len(inp) != 0:
+            data = udpsock.recv(1024)
+            pkt = EncapsulationPacket()
+            pkt.unpack(data)
+            if pkt.status == EncapsulationPacket.ENCAP_STATUS_SUCCESS and pkt.command == EncapsulationPacket.ENCAP_CMD_LISTIDENTITY:
+                csd = CommandSpecificData(pkt.data)
+                if csd.type_id == CommandSpecificData.TYPE_ID_LIST_IDENT_RESPONSE:
+                    lid = ListIdentifyReply(csd.data)
+                    return lid
+        return None
+
 class EthernetIPSocket(object):
     def __init__(self, ip):
         self.ipaddr = ip
@@ -372,16 +459,20 @@ class EthernetIPSocket(object):
 
     def delete(self):
         self.sock.close()
-
+    
     def mkReqPath(self, clas, inst, attr):
-        if attr == None:
-            data = b"\x02"
+        if clas > 255: 
+            clas_data = struct.pack("BBH", 0x21, 0, 0x300)
         else:
-            data = b"\x03"
-        data += b"\x20" + struct.pack("B", clas)
-        data += b"\x24" + struct.pack("B", inst)
+            clas_data = struct.pack("BB", 0x20, clas)
+        inst_data = struct.pack("BB", 0x24, inst)
+        attr_data = b''
         if attr != None:
-            data += b"\x30" + struct.pack("B", attr)
+             attr_data = struct.pack("BB", 0x30, attr)
+        data = bytes([(int((len(clas_data) + len(inst_data) + len(attr_data))/2))])
+        data += clas_data
+        data += inst_data
+        data += attr_data
         return data
 
     def scanNetwork(self, broadcastAddress="255.255.255.0", timeout=10):
@@ -467,6 +558,14 @@ class EthernetIPSession(EthernetIPSocket):
                 return 0
         return None
 
+    def unregisterSession(self):
+        context = random.randint(1,4026531839)
+        pkt = EncapsulationPacket(command=EncapsulationPacket.ENCAP_CMD_UNREGISTERSESSION,\
+                                  length=0, session=self.session, sender_context=context.to_bytes(8, byteorder='big'), data=b'')
+        self.sock.send(pkt.pack())
+        self.session=0
+        
+
     def sendEncap(self, command, data):
         context = random.randint(1,4026531839)
         pkt = EncapsulationPacket(command=command, length=len(data), sender_context=context.to_bytes(8, byteorder='big'), data=data)
@@ -489,20 +588,21 @@ class EthernetIPSession(EthernetIPSocket):
         inp, out, err = select.select([self.sock], [], [], 10)
         if len(inp) != 0:
             data = self.sock.recv(4096)
-            pkt = EncapsulationPacket()
-            pkt.unpack(data)
-            if pkt.status == EncapsulationPacket.ENCAP_STATUS_SUCCESS and \
-            pkt.command == EncapsulationPacket.ENCAP_CMD_SENDRRDATA:
-                srr = SendRRPacket(pkt.data)
-                csd = CommandSpecificData(srr.data)
-                cpf = UnconnectedDataItemResp(csd.data)
-                ret = [cpf.status, cpf.data]
-                if chk != 0:
-                    rsppkt = self.unconnSendValidRsp(service, chkdata, context)
-                    if str(rsppkt) != str(pkt):
-                        print("Packets differ")
-                        assert(0)
-                return ret
+            if len(data) > 0:
+                pkt = EncapsulationPacket()
+                pkt.unpack(data)
+                if pkt.status == EncapsulationPacket.ENCAP_STATUS_SUCCESS and \
+                        pkt.command == EncapsulationPacket.ENCAP_CMD_SENDRRDATA:
+                    srr = SendRRPacket(pkt.data)
+                    csd = CommandSpecificData(srr.data)
+                    cpf = UnconnectedDataItemResp(csd.data)
+                    ret = [cpf.status, cpf.data]
+                    if chk != 0:
+                        rsppkt = self.unconnSendValidRsp(service, chkdata, context)
+                        if str(rsppkt) != str(pkt):
+                            print("Packets differ")
+                            assert(0)
+                    return ret
         return None
 
     def unconnSendValidRsp(self, service, data, context=0):
@@ -518,11 +618,16 @@ class EthernetIPSession(EthernetIPSocket):
                                   length=len(srr),session=self.session, sender_context=context.to_bytes(8, 'big'), data=srr)
         return pkt
 
-    def getAttrSingle(self, clas, inst, attr, chk=0, chkdata="\x00"):
+    def getAttrSingle(self, clas, inst, attr, data=b'', chk=0, chkdata="\x00", service=CI_SRV_GET_ATTR_SINGLE):
         path = self.mkReqPath(clas, inst, attr)
-        return self.unconnSend(CI_SRV_GET_ATTR_SINGLE, path, \
+        return self.unconnSend(service, path+data, \
                                random.randint(1,4026531839), chk, chkdata)
 
+    def getAttrAll(self, clas, inst, data=b'', chk=0, chkdata="\x00"):
+        path = self.mkReqPath(clas, inst, None)
+        return self.unconnSend(CI_SRV_GET_ALL, path+data, \
+                               random.randint(1,4026531839), chk, chkdata)
+                            
     def setAttrSingle(self, clas, inst, attr, data):
         if str == type(data): 
             # string values need a special attention (add length before and a padding byte behind)
@@ -533,6 +638,23 @@ class EthernetIPSession(EthernetIPSocket):
         path = self.mkReqPath(clas, inst, attr)
         return self.unconnSend(CI_SRV_SET_ATTR_SINGLE, path+data, \
                         random.randint(1,4026531839), 0, "")
+
+    def setAttrAll(self, clas, inst, data):
+        if str == type(data): 
+            # string values need a special attention (add length before and a padding byte behind)
+            data_len = len(data)
+            data = struct.pack("BB", data_len, 0) + data.encode()
+            if data_len&1:
+                data += b"\x00"
+        path = self.mkReqPath(clas, inst, None)
+        return self.unconnSend(CI_SRV_SET_ATTR_ALL, path+data, \
+                        random.randint(1,4026531839), 0, "")
+
+
+    def resetService(self, inst=1, resetType=0):
+        path = self.mkReqPath(CIP_OBJ_IDENTITY, inst, attr=None)
+        data = struct.pack("B", resetType)
+        return self.unconnSend(CI_SRV_RESET, path+data, random.randint(1,4026531839), 0, "")
 
 class EthernetIPExpConnection(EthernetIPSession):
     def __init__(self, ipaddr):
@@ -721,14 +843,14 @@ class EthernetIPExpConnection(EthernetIPSession):
             self.prod_state = 0
         
 def testENIP():
-    hostname = "192.168.3.45"
+    hostname = "192.168.1.32"
     broadcast = "192.168.255.255"
     inputsize = 1
     outputsize = 1
     EIP = EthernetIP(hostname)
     C1 = EIP.explicit_conn(hostname)
 
-    
+    """    
     listOfNodes = C1.scanNetwork(broadcast,5)
     print("Found ", len(listOfNodes), " nodes")
     for node in listOfNodes:
@@ -736,7 +858,8 @@ def testENIP():
         sockinfo = SocketAddressInfo(node.socket_addr)
         ip = socket.inet_ntoa(struct.pack("!I",sockinfo.sin_addr))
         print(ip, " - ", name)
-    
+    """
+
     pkt = C1.listID()
     if pkt != None:
         print("Product name: ", pkt.product_name.decode())
@@ -744,18 +867,34 @@ def testENIP():
     pkt = C1.listServices()
     print("ListServices:", str(pkt))
 
+
+    path = C1.mkReqPath(0x300, 1, None)
+    data = struct.pack("HB", 0x12, 0)
+    r = C1.unconnSend(0x32, path+data, random.randint(1,4026531839))
+    #r = C1.getAttrSingle(0x300, 1, None, struct.pack("HB", 0x12, 0))
+    if 0 == r[0]:
+        print("Could read 0x300")
+    else:
+        print("Failed to read 0x300")
+
+    """
     # read input size from global system object (obj 0x84, attr 4)
     r = C1.getAttrSingle(0x84, 1, 4)
     if 0 == r[0]:
         print("Read CPX input size from terminal success (data: "+ str(r[1]) + ")")
         inputsize = struct.unpack("B", r[1])[0]
+    else:
+        print("Failed to read CPX input size")
 
     # read output size from global system object (obj 0x84, attr 5)
     r = C1.getAttrSingle(0x84, 1, 5)
     if 0 == r[0]:
         print("Read CPX output size from terminal sucess (data: " + str(r[1]) + ")")
         outputsize = struct.unpack("B", r[1])[0]
-
+    else:
+        print("Failed to read CPX output size")
+    """
+    """
     # configure i/o
     print("Configure with {0} bytes input and {1} bytes output".format(inputsize, outputsize))
     EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_INPUT,  inputsize, 101, C1)
@@ -786,5 +925,6 @@ def testENIP():
     C1.stopProduce()
     C1.sendFwdCloseReq(101,100,1)
     EIP.stopIO()
+    """
 
-# testENIP()
+#testENIP()
