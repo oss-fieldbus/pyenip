@@ -22,7 +22,7 @@ import struct
 import threading
 import time
 
-import dpkt.dpkt as dpkt
+from .dpkt import dpkt
 
 ENIP_TCP_PORT   = 44818
 ENIP_UDP_PORT   = 2222
@@ -353,7 +353,7 @@ class EthernetIOThread(threading.Thread):
         elif self.typ == 2:
             self.conn.prodThread()
 
-class EthernetIP(object):
+class EtherNetIP(object):
     ENIP_IO_TYPE_INPUT  = 0
     ENIP_IO_TYPE_OUTPUT = 1
 
@@ -374,9 +374,9 @@ class EthernetIP(object):
             bits.append(0)
         self.assembly[inst] = (conn, iotype, bits)
         if conn != None:
-            if iotype == EthernetIP.ENIP_IO_TYPE_INPUT:
+            if iotype == EtherNetIP.ENIP_IO_TYPE_INPUT:
                 conn.mapIn(bits)
-            elif iotype == EthernetIP.ENIP_IO_TYPE_OUTPUT:
+            elif iotype == EtherNetIP.ENIP_IO_TYPE_OUTPUT:
                 conn.mapOut(bits)
         return bits
 
@@ -414,7 +414,7 @@ class EthernetIP(object):
                     iotype = self.assembly[inst][1]
                     bits = self.assembly[inst][2]
                     # update i/o
-                    if conn.ipaddr == addr and iotype == EthernetIP.ENIP_IO_TYPE_INPUT and pkt.conn_id == conn.toconnid:
+                    if conn.ipaddr == addr and iotype == EtherNetIP.ENIP_IO_TYPE_INPUT and pkt.conn_id == conn.toconnid:
                         i = 0
                         for byte in pkt.data:
                             for s in range(8):
@@ -424,8 +424,10 @@ class EthernetIP(object):
                                     bits[i] = False
                                 i += 1
 
-    def explicit_conn(self, ipaddr):
-        exp = EthernetIPExpConnection(ipaddr)
+    def explicit_conn(self, ipaddr=None):
+        if ipaddr is None:
+            ipaddr = self.ip
+        exp = EtherNetIPExpConnection(ipaddr)
         self.explicit.append(exp)
         return exp
 
@@ -450,7 +452,7 @@ class EthernetIP(object):
                     return lid
         return None
 
-class EthernetIPSocket(object):
+class EtherNetIPSocket(object):
     def __init__(self, ip):
         self.ipaddr = ip
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -534,9 +536,9 @@ class EthernetIPSocket(object):
                     return lsr
         return None
 
-class EthernetIPSession(EthernetIPSocket):
+class EtherNetIPSession(EtherNetIPSocket):
     def __init__(self, ipaddr):
-        EthernetIPSocket.__init__(self,ipaddr)
+        EtherNetIPSocket.__init__(self,ipaddr)
         self.session = 0
 
     def delete(self):
@@ -656,9 +658,9 @@ class EthernetIPSession(EthernetIPSocket):
         data = struct.pack("B", resetType)
         return self.unconnSend(CI_SRV_RESET, path+data, random.randint(1,4026531839), 0, "")
 
-class EthernetIPExpConnection(EthernetIPSession):
+class EtherNetIPExpConnection(EtherNetIPSession):
     def __init__(self, ipaddr):
-        EthernetIPSession.__init__(self, ipaddr)
+        EtherNetIPSession.__init__(self, ipaddr)
         self.inAssem = None
         self.outAssem = None
         self.otconnid = 0
@@ -847,7 +849,7 @@ def testENIP():
     broadcast = "192.168.255.255"
     inputsize = 1
     outputsize = 1
-    EIP = EthernetIP(hostname)
+    EIP = EtherNetIP(hostname)
     C1 = EIP.explicit_conn(hostname)
 
     """    
@@ -897,8 +899,8 @@ def testENIP():
     """
     # configure i/o
     print("Configure with {0} bytes input and {1} bytes output".format(inputsize, outputsize))
-    EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_INPUT,  inputsize, 101, C1)
-    EIP.registerAssembly(EthernetIP.ENIP_IO_TYPE_OUTPUT, outputsize, 100, C1)
+    EIP.registerAssembly(EtherNetIP.ENIP_IO_TYPE_INPUT,  inputsize, 101, C1)
+    EIP.registerAssembly(EtherNetIP.ENIP_IO_TYPE_OUTPUT, outputsize, 100, C1)
     EIP.startIO()
 
     C1.registerSession()
