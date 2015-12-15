@@ -187,7 +187,8 @@ class UnconnectedDataItemResp(dpkt.Packet):
                ('length', 'H', 0),
                ('service', 'B', 0),
                ('resv', 'B', 0),
-               ('status', 'H', 0))
+               ('status', 'B', 0),
+               ('additional_status_size', 'B', 0))
 
 class ForwardOpenReq(dpkt.Packet):
     # network connection parameter bit offsets
