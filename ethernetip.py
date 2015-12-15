@@ -118,6 +118,9 @@ CIP_ROUTER_ERROR_MEMBER_NOT_SETTABLE       = 0x29  # Cannot set value of member
 CIP_ROUTER_ERROR_UNKNOWN_MODBUS_ERROR      = 0x2B  # Unhandled Modbus Error
 CIP_ROUTER_ERROR_STILL_PROCESSING          = 0xFF  # Special marker to indicate we haven't finished processing the request yet
 
+# Extended status in Forward open response
+CIP_FWD_OPEN_EXTENDED_STATUS_INVALID_CONFIGURATION_SIZE = 0x126
+
 class EncapsulationPacket(dpkt.Packet):
     # commands
     ENCAP_CMD_NOP                       = 0x0000
@@ -680,7 +683,7 @@ class EtherNetIPExpConnection(EtherNetIPSession):
 
     def sendFwdOpenReq(self, inputinst, outputinst, configinst, multiplier=1, \
                        torpi=1000, otrpi=1000, multicast=False, inputsz=None, \
-                       outputsz=None, fwdo=None):
+                       outputsz=None, fwdo=None, configData=None):
         rand = random.randint(1, 0xffff) + 0xE4190000
         torpi *= 1000
         otrpi *= 1000
@@ -704,6 +707,14 @@ class EtherNetIPExpConnection(EtherNetIPSession):
                struct.pack(">I",0x00002004) + struct.pack("B",0x24) + struct.pack("B",configinst) + \
                struct.pack("B",0x2c) + struct.pack("B",outputinst) + struct.pack("B",0x2c) +        \
                struct.pack("B",inputinst)
+        plen = int(len(path) / 2)
+        if configData != None:
+                # 0x80 = simple data segment, with length in words => max 512 bytes of data
+                if len(configData) > 512:
+                        return 1    
+                path += struct.pack("BB", 0x80, int(len(configData)/2) )
+                path += configData
+                plen = int(len(path) / 2)
         if fwdo == None:
             self.conn_serial_num += 1
             fwdo = ForwardOpenReq( \
@@ -721,6 +732,7 @@ class EtherNetIPExpConnection(EtherNetIPSession):
                                             0x2<<ForwardOpenReq.FORWARD_OPEN_CONN_PARAM_BIT_PRIORITY | \
                                             0x2<<ForwardOpenReq.FORWARD_OPEN_CONN_PARAM_BIT_CONN_TYPE \
                                            ), \
+                                  plen=plen, \
                                   data=path \
                                  )
         # add service field
@@ -748,22 +760,27 @@ class EtherNetIPExpConnection(EtherNetIPSession):
                 srr = SendRRPacket(pkt.data)
                 csd = CommandSpecificData(srr.data)
                 udi = UnconnectedDataItem(csd.data)
-                fworsp = ForwardOpenResp(udi.data)
-                # socket address info O->T
-                ucdih = UnconnectedDataItemHdr(fworsp.data)
-                otaddrinfo = SocketAddressInfo(ucdih.data)
-                if b'' != otaddrinfo.data:
-                    ucdih2 = UnconnectedDataItemHdr(otaddrinfo.data)
-                    toaddrinfo = SocketAddressInfo(ucdih2.data)
-                self.otconnid = fworsp.otconnid
-                self.toconnid = fworsp.toconnid
-                self.otapi = fworsp.otapi / 1000
-                if self.otapi < 8:
-                    self.otapi = 8
-                self.toapi = fworsp.toapi / 1000
-                if self.toapi < 8:
-                    self.toapi = 8
-                return 0
+                if udi.data[1] == 0: # Forward Open Status
+                    fworsp = ForwardOpenResp(udi.data)
+                    # socket address info O->T
+                    ucdih = UnconnectedDataItemHdr(fworsp.data)
+                    otaddrinfo = SocketAddressInfo(ucdih.data)
+                    if b'' != otaddrinfo.data:
+                        ucdih2 = UnconnectedDataItemHdr(otaddrinfo.data)
+                        toaddrinfo = SocketAddressInfo(ucdih2.data)
+                    self.otconnid = fworsp.otconnid
+                    self.toconnid = fworsp.toconnid
+                    self.otapi = fworsp.otapi / 1000
+                    if self.otapi < 8:
+                        self.otapi = 8
+                    self.toapi = fworsp.toapi / 1000
+                    if self.toapi < 8:
+                        self.toapi = 8
+                    return 0
+                elif udi.data[1] == 0x01: # Forward open failed with Connection Failure
+                    if udi.data[2] > 0:
+                        extended_status, = struct.unpack("H", udi.data[3:5])
+                        return extended_status
         return None
 
     def sendFwdCloseReq(self, inputinst, outputinst, configinst):
